@@ -1,0 +1,7 @@
+{
+    "Alimentação": ["Mc Donalds", "Burger King", "KFC", "Restaurante", "Lanchonete", "Pizza", "Subway"],
+    "Transporte": ["Uber", "99 Táxi", "Posto", "Gasolina", "Rodoviária", "Metrô"],
+    "Compras": ["Mercadolivre", "Shopee", "Magazine Luiza", "Americanas", "Casas Bahia"],
+    "Saúde": ["Drogaria", "Raia", "Farmácia", "Consulta", "Hospital", "Clínica"],
+    "Entretenimento": ["Netflix", "Spotify", "Cinema", "Ingresso", "Teatro"]
+}
