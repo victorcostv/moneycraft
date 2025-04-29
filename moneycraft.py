@@ -8,7 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from datetime import datetime, timedelta
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 CATEGORIES_FILE = "categories.json"
@@ -28,7 +28,7 @@ if not os.path.exists(CATEGORIES_FILE):
         json.dump(default_categories, f, indent=4)
 
 def load_categories():
-    with open(CATEGORIES_FILE, "r") as f:
+    with open(CATEGORIES_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def save_categories(categories):
@@ -50,6 +50,21 @@ def upload_file():
         return send_file(excel_path, as_attachment=True)
     return "Erro ao processar o arquivo."
 
+@app.route("/categories", methods=["GET"])
+def get_categories():
+    return jsonify(load_categories())
+
+@app.route("/edit-categories")
+def edit_categories():
+    categories = load_categories()
+    return render_template("categories.html", categories=categories)
+
+@app.route("/update-categories", methods=["POST"])
+def update_categories():
+    data = request.json
+    save_categories(data)
+    return jsonify({"message": "Categorias atualizadas com sucesso!"})
+
 def process_pdf(pdf_path):
     doc = fitz.open(pdf_path)
     transactions = []
@@ -64,10 +79,6 @@ def process_pdf(pdf_path):
                 return category
         return "Outros"
     
-    current_month = datetime.now().strftime("%b %Y")
-    month_map = {"Jan": 1, "Fev": 2, "Mar": 3, "Abr": 4, "Mai": 5, "Jun": 6,
-                 "Jul": 7, "Ago": 8, "Set": 9, "Out": 10, "Nov": 11, "Dez": 12}
-    
     for page in doc:
         lines = page.get_text("text").split("\n")
         i = 0
@@ -80,32 +91,30 @@ def process_pdf(pdf_path):
                 description = lines[i - 1].strip()
                 category = classify_expense(description)
                 
-                match = re.search(r"- Parcela (\d+)/(\d+)", description)
+                match = re.search(r"(\d+)/(\d+)", description)
                 if match:
                     current_installment = int(match.group(1))
                     total_installments = int(match.group(2))
-                    remaining_installments = total_installments - current_installment
-                    clean_description = re.sub(r"- Parcela \d+/\d+", "", description).strip()
-                    for future_month in range(remaining_installments + 1):
+                    clean_description = re.sub(r"-?\s*\d+/\d+", "", description).strip()
+                    for future_month in range(total_installments - current_installment + 1):
                         future_date = datetime.now() + timedelta(days=30 * future_month)
                         month_name = future_date.strftime("%b %Y")
                         transactions.append([month_name, current_date, clean_description, value, category, f"{current_installment + future_month}/{total_installments}"])
                 else:
-                    transactions.append([current_month, current_date, description, value, category, ""])  
+                    transactions.append([datetime.now().strftime("%b %Y"), current_date, description, value, category, ""])  
             i += 1
     
     df = pd.DataFrame(transactions, columns=["Mês", "Data", "Descrição", "Valor", "Categoria", "Parcela"])
     output_path = os.path.join(OUTPUT_FOLDER, "fatura_nubank.xlsx")
     
     wb = Workbook()
-    grouped = df.groupby("Mês")
-    
-    sorted_months = sorted(grouped.groups.keys(), key=lambda x: datetime.strptime(x, "%b %Y"))
+    sorted_months = sorted(df["Mês"].unique(), key=lambda x: datetime.strptime(x, "%b %Y"))
     
     for month in sorted_months:
         ws = wb.create_sheet(title=month)
         header = ["Data", "Descrição", "Valor", "Categoria", "Parcela"]
         ws.append(header)
+        ws.column_dimensions["B"].width = 30  # Define a largura da coluna B para 30
         
         for col in range(1, len(header) + 1):
             ws.cell(row=1, column=col).font = Font(bold=True, color="FFFFFF")
@@ -113,26 +122,14 @@ def process_pdf(pdf_path):
             ws.cell(row=1, column=col).alignment = Alignment(horizontal="center")
             ws.cell(row=1, column=col).border = Border(bottom=Side(style="thin"))
         
-        for row in grouped.get_group(month).itertuples(index=False, name=None):
+        for row in df[df["Mês"] == month].itertuples(index=False, name=None):
             ws.append(row[1:])
         
-        ws.append(["", "Total da Fatura", grouped.get_group(month)["Valor"].sum()])
+        ws.append(["", "Total da Fatura", df[df["Mês"] == month]["Valor"].sum()])
         
     wb.remove(wb["Sheet"])
     wb.save(output_path)
     return output_path
-
-@app.route("/categories", methods=["GET", "POST"])
-def manage_categories():
-    if request.method == "POST":
-        data = request.json
-        save_categories(data)
-        return jsonify({"message": "Categorias atualizadas com sucesso!"})
-    return jsonify(load_categories())
-
-@app.route("/edit-categories")
-def edit_categories():
-    return render_template("categories.html")
 
 if __name__ == "__main__":
     app.run(debug=True)

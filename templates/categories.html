@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editar Categorias</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+
+<div class="container mt-5">
+    <h2 class="mb-4">⚙️ Editar Categorias</h2>
+    <div id="categories-container" class="mt-4"></div>
+    <a href="/" class="btn btn-secondary mt-4">🔙 Voltar</a>
+</div>
+
+<script>
+let categories = {};
+
+function loadCategories() {
+    $.getJSON("/categories", function(data) {
+        categories = data;
+        renderCategories();
+    });
+}
+
+function renderCategories() {
+    const container = $("#categories-container");
+    container.empty();
+
+    Object.entries(categories).forEach(([category, keywords]) => {
+        const categoryBlock = $(`
+            <div class="mb-4 p-3 border rounded position-relative">
+                <div class="d-flex align-items-center mb-2">
+                    <input type="text" class="form-control category-name me-2" value="${category}" data-old-name="${category}">
+                    <button class="btn btn-outline-danger btn-sm delete-category">🗑️</button>
+                </div>
+                <div class="d-flex flex-wrap gap-2 keywords-container"></div>
+                <div class="d-flex align-items-center gap-2 mt-2">
+                    <input type="text" class="form-control form-control-sm new-keyword-input" placeholder="Nova palavra-chave">
+                    <button class="btn btn-success btn-sm add-keyword-btn">➕</button>
+                </div>
+            </div>
+        `);
+
+        // Atualiza nome da categoria pai
+        categoryBlock.find(".category-name").on("blur", function () {
+            const newName = $(this).val().trim();
+            const oldName = $(this).data("old-name");
+
+            if (newName && newName !== oldName) {
+                categories[newName] = categories[oldName];
+                delete categories[oldName];
+                saveToBackend();
+            }
+        });
+
+        // Remove categoria pai
+        categoryBlock.find(".delete-category").click(() => {
+            delete categories[category];
+            saveToBackend();
+            renderCategories();
+        });
+
+        // Renderiza palavras-chave
+        const keywordsContainer = categoryBlock.find(".keywords-container");
+        keywords.forEach(keyword => {
+            const keywordBadge = $(`
+                <div class="badge bg-light text-dark rounded-pill p-2 d-flex align-items-center">
+                    ${keyword}
+                    <button type="button" class="btn-close btn-close-red ms-2 small remove-keyword-btn" style="font-size:0.7rem;"></button>
+                </div>
+            `);
+            keywordBadge.find(".remove-keyword-btn").click(() => {
+                categories[category] = categories[category].filter(k => k !== keyword);
+                saveToBackend();
+                renderCategories();
+            });
+            keywordsContainer.append(keywordBadge);
+        });
+
+        // Adiciona palavra-chave com botão ou enter
+        const input = categoryBlock.find(".new-keyword-input");
+        categoryBlock.find(".add-keyword-btn").click(() => {
+            const value = input.val().trim();
+            if (value && !categories[category].includes(value)) {
+                categories[category].push(value);
+                input.val("");
+                saveToBackend();
+                renderCategories();
+            }
+        });
+        input.on("keypress", (e) => {
+            if (e.key === "Enter") {
+                categoryBlock.find(".add-keyword-btn").click();
+            }
+        });
+
+        container.append(categoryBlock);
+    });
+
+    // Bloco para nova categoria
+    const addBlock = $(`
+        <div class="mb-4 p-3 border rounded bg-light">
+            <input type="text" class="form-control form-control-sm" placeholder="Adicionar nova categoria aqui...">
+        </div>
+    `);
+    addBlock.find("input").on("keypress", function (e) {
+        if (e.key === "Enter") {
+            const name = $(this).val().trim();
+            if (name && !categories[name]) {
+                categories[name] = [];
+                saveToBackend();
+                renderCategories();
+            }
+        }
+    });
+
+    container.append(addBlock);
+}
+
+function saveToBackend() {
+    $.ajax({
+        url: "/update-categories",
+        method: "POST",
+        contentType: "application/json",
+        data: JSON.stringify(categories)
+    });
+}
+
+$(document).ready(loadCategories);
+</script>
+
+</body>
+</html>
